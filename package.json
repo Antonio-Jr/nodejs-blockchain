@@ -1,0 +1,28 @@
+{
+  "name": "nodejs-blockchain",
+  "version": "1.0.0",
+  "description": "Nodejs blockchain OrderBook test",
+  "main": "index.js",
+  "scripts": {
+    "client": "node client.js",
+    "server": "node server.js",
+    "test": "test"
+  },
+  "keywords": [
+    "Nodejs",
+    "Blockchain",
+    "Orderbook",
+    "crypto",
+    "crypto-currency",
+    "broker",
+    "crypto",
+    "brokerage"
+  ],
+  "author": "Antonio Junior Souza Silva",
+  "license": "ISC",
+  "dependencies": {
+    "grenache-nodejs-http": "^0.7.13",
+    "grenache-nodejs-link": "^1.0.0",
+    "nodemon": "^3.0.1"
+  }
+}
