@@ -1,5 +1,4 @@
-const Lock = require('./lock')
-const { EventEmitter } = require('events')
+const Lock = require('./lock');
 const { v4: uuidv4 } = require('uuid');
 
 class OrderBook {
@@ -9,13 +8,15 @@ class OrderBook {
     this.ask = {};
     this.lock = new Lock();
     this.instance = uuidv4();
-    this.emit = new EventEmitter();
   }
 
   addOrder(pair, side, price, amount) {
     this.lock.acquire();
 
     try {
+      
+      if (this.sumExistingOrders(pair, side, price, amount)) return;
+
       const orders = this[side][pair] || [];
       orders.push({ price, amount, instance: this.instance });
       this[side][pair] = orders;
@@ -29,62 +30,113 @@ class OrderBook {
 
     try {
       const orders = this[side][pair];
-      for (let i = 0; i < orders.length; i++) {
-        if (orders[i].price === price && orders[i].amount === amount && orders[i].instance === this.instance ) {
-          orders.splice(i, 1);
-          break;
+      const index = orders.findIndex(order => order.price === price && order.amount === amount && order.instance === this.instance);
+      if (index !== -1) {
+        orders.splice(index, 1);
+        if (orders.length === 0) {
+          delete this[side][pair];
         }
-      }
-      if (orders.length === 0) {
-        delete this[side][pair];
-      } else {
-        this[side][pair] = orders;
       }
     } finally {
       this.lock.release();
     }
   }
 
-  getBestBid(pair) {
-    return this.bid[pair] && this.bid[pair][0] ? this.bid[pair][0].price : null;
-  }
-
-  getBestAsk(pair) {
-    return this.ask[pair] && this.ask[pair][0] ? this.ask[pair][0].price : null;
+  getBestPrice(pair, side) {
+    const topOrder = this[side][pair] && this[side][pair][0];
+    return topOrder ? topOrder.price : null;
   }
 
   getDepth(pair) {
-    const bid = this.bid[pair] || [];
-    const ask = this.ask[pair] || [];
     return {
-      bid,
-      ask,
+      bid: this.bid[pair] || [],
+      ask: this.ask[pair] || [],
     };
   }
 
-  getBook(){
-    const response = {}
-    for (const pair of this.pairs){
+  getBook() {
+    const response = {};
+    for (const pair of this.pairs) {
       response[pair] = this.getDepth(pair);
     }
-
-    return response
+    return response;
   }
 
-  update(book){
-    const bid = this.bid;
+  update(book) {
+    if (!book) return;
 
-    if (Object.keys(bid).length == 0 && !book?.bid) return;
+    const { pair, bid, ask } = book;
 
-    const bids = Object.values([...bid, ...book.bid].reduce((acc, { price, instance, amount }) => {
-      acc[price] = { price, instance, amount: (acc[price] ? acc[price].amount : 0) + amount  };
-      return acc;
-    }, {}));
+    if (bid && bid.length > 0) {
+      for (const newBid of bid) {
+        this.addOrder(pair, 'bid', newBid.price, newBid.amount);
+      }
+    }
 
-    this.bid[book.pair] = bids
-    this.ask[book.pair] = book.ask
+    if (ask && ask.length > 0) {
+      for (const newAsk of ask) {
+        this.addOrder(pair, 'ask', newAsk.price, newAsk.amount);
+      }
+    }
+
+    this.matchOrders(pair);
+  }
+
+  matchOrders(pair) {
+    if (!this.bid[pair] || !this.ask[pair]) {
+      return;
+    }
+
+    const bids = this.bid[pair];
+    const asks = this.ask[pair];
+
+    let i = 0;
+    let j = 0;
+
+    while (i < bids.length && j < asks.length) {
+      const bid = bids[i];
+      const ask = asks[j];
+
+      if (bid.price >= ask.price) {
+        const matchedAmount = Math.min(bid.amount, ask.amount);
+        bid.amount -= matchedAmount;
+        ask.amount -= matchedAmount;
+
+        if (bid.amount === 0) {
+          bids.splice(i, 1);
+        }
+
+        if (ask.amount === 0) {
+          asks.splice(j, 1);
+        }
+      }
+
+      if (bid.amount <= 0) {
+        i++;
+      }
+      if (ask.amount <= 0) {
+        j++;
+      }
+    }
+  }
+
+  sumExistingOrders(pair, side, price, amount) {
+    if (!this[side][pair]) {
+      return false;
+    }
+      
+    const orders = this[side][pair];
+
+    for (let i = 0; i < orders.length; i++) {
+      if (orders[i].price === price) {
+        orders[i].amount += amount;
+        this[side][pair] = orders
+        return true;
+      }
+    }
+
+    return false;
   }
 }
 
-
-module.exports = OrderBook
+module.exports = OrderBook;
