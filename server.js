@@ -10,7 +10,7 @@ const pairs = ['BTC-USD'];
 class Server {
   constructor(grapeUrl) {
     this.grapeUrl = grapeUrl;
-    this.servicePort = 3030 //Math.floor(Math.random() * (3090 - 3030 + 1)) + 3030
+    this.servicePort = Math.floor(Math.random() * (3033 - 3030 + 1)) + 3030
     this.link = null;
     this.peer = null;
     this.eventEmitter = new EventEmitter();
@@ -46,7 +46,7 @@ class Server {
 
     setInterval(() => {
       this.link.announce('sync_book', service.port, {});
-      this.eventEmitter.emit('ready');
+      // this.eventEmitter.emit('ready');
     }, 1000);   
 
     service.on('request', (rid, key, payload, handler) => {
