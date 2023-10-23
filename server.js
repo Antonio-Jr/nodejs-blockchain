@@ -10,7 +10,7 @@ const pairs = ['BTC-USD'];
 class Server {
   constructor(grapeUrl) {
     this.grapeUrl = grapeUrl;
-    this.servicePort = Math.floor(Math.random() * (3090 - 3030 + 1)) + 3030
+    this.servicePort = 3030 //Math.floor(Math.random() * (3090 - 3030 + 1)) + 3030
     this.link = null;
     this.peer = null;
     this.eventEmitter = new EventEmitter();
@@ -54,7 +54,7 @@ class Server {
           const result = this.syncBook(payload);
           handler.reply(null, result);
       } catch (err) {
-        console.error('Erro durante a sincronização do livro:', err);
+        console.error('An error occurred during the sync', err);
         handler.reply(err);
       }
     });

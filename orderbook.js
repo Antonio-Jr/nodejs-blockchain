@@ -14,13 +14,16 @@ class OrderBook {
     this.lock.acquire();
 
     try {
-      if (this.sumExistingOrders(pair, side, price, amount)) return;
+      if (this.sumExistingOrders(pair, side, price, amount)) {
+        if (this.eventEmitter) this.eventEmitter.emit('updateBook', { operation: this.addOrder.name, pair, side, price, amount })
+        return;
+      }
 
       const orders = this[side][pair] || [];
       orders.push({ price, amount });
       this[side][pair] = orders;
       this.isSynced = false
-      if (this.eventEmitter) this.eventEmitter.emit('updateBook')
+      if (this.eventEmitter) this.eventEmitter.emit('updateBook', { operation: this.addOrder.name, pair, side, price, amount })
     } finally {
       this.lock.release();
     }
@@ -30,17 +33,16 @@ class OrderBook {
     this.lock.acquire();
     
     try {
-      const orders = this[side][pair];
-      const index = orders.findIndex(order => order.price === price && order.amount === amount);
+      const index = this[side][pair].findIndex(order => order.price === price && order.amount === amount);
       if (index !== -1) {
-        orders.splice(index, 1);
-        if (orders.length === 0) {
+        this[side][pair].splice(index, 1);
+        if (this[side][pair].length === 0) {
           delete this[side][pair];
         }
       }
       
       this.isSynced = false
-      if (this.eventEmitter) this.eventEmitter.emit('updateBook')
+      if (this.eventEmitter) this.eventEmitter.emit('updateBook', { operation: this.removeOrder.name, pair, side, price, amount })
     } finally {
       this.lock.release();
     }
@@ -69,23 +71,11 @@ class OrderBook {
   update(book) {
     if (!book || this.isSynced) return;
 
-    for (const pair of Object.keys(book)){
-      const { bid, ask } = book[pair];
+    const { operation, pair, side, price, amount } = book
 
-      if (bid && bid.length > 0) {
-        for (const newBid of bid) {
-          this.addOrder(pair, 'bid', newBid.price, newBid.amount);
-        }
-      }
-
-      if (ask && ask.length > 0) {
-        for (const newAsk of ask) {
-          this.addOrder(pair, 'ask', newAsk.price, newAsk.amount);
-        }
-      }
-      this.matchOrders(pair);
-      this.isSynced = true
-    }
+    this[operation](pair, side, price, amount)
+    this.matchOrders(pair);
+    this.isSynced = true
   }
 
   matchOrders(pair) {

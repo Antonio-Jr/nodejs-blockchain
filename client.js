@@ -15,10 +15,9 @@ class Client {
     
     this.peer = new PeerRPCClient(this.link, { timeout: 100000 });
     this.peer.init();
-    
     this.orderBook = new OrderBook(pairs, this.eventEmitter);
-    this.eventEmitter.on('updateBook', async () => {
-      await this.syncBookWithRetry();
+    this.eventEmitter.on('updateBook', async (data) => {
+        await this.syncBookWithRetry(JSON.stringify(data));
     })
   }
 
@@ -37,14 +36,12 @@ class Client {
     console.log('Book updated successfully!')
   }
 
-  async syncBook() {
+  async syncBook(data) {
     try {
-      const book = JSON.stringify(this.orderBook.getBook());
-
-      this.peer.request('sync_book', book, (err, result) => {
+      this.peer.request('sync_book', data, (err, result) => {
         if (err) {
-          console.error('Erro durante a sincronização:', err);
-          this.retrySyncBook();
+          console.error('An error occurred during the sync:', err);
+          this.retrySyncBook(data);
           return;
         }
 
@@ -53,21 +50,21 @@ class Client {
         }
       });
     } catch (err) {
-      console.error('Erro durante a sincronização:', err);
-      this.retrySyncBook();
+      console.error('An error occurred during the sync:', err);
+      this.retrySyncBook(data);
     }
   }
 
-  async retrySyncBook() {
+  async retrySyncBook(data) {
     const retryInterval = 5000;
 
     setTimeout(() => {
-      this.syncBook();
+      this.syncBook(data);
     }, retryInterval);
   }
 
-  async syncBookWithRetry() {
-    this.syncBook();
+  async syncBookWithRetry(data) {
+    this.syncBook(data);
   }
 
   async stop() {
@@ -82,9 +79,10 @@ console.log(`Client started on port ${serverPort}`)
 
 const client = new Client(`http://127.0.0.1:${serverPort}`);
 
+client.orderBook.addOrder("BTC-USD", "bid", 25, 100);
 client.orderBook.addOrder("BTC-USD", "bid", 10, 10);
 client.orderBook.addOrder("BTC-USD", "bid", 10, 50);
-client.orderBook.addOrder("BTC-USD", "ask", 10, 10);
-client.orderBook.removeOrder("BTC-USD", "bid", 10, 10);
+client.orderBook.addOrder("BTC-USD", "ask", 105, 100);
+client.orderBook.removeOrder("BTC-USD", "bid", 25, 100);
 
 console.log(client.orderBook.getDepth("BTC-USD"))
