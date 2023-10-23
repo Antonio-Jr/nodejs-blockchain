@@ -1,25 +1,26 @@
 const Lock = require('./lock');
-const { v4: uuidv4 } = require('uuid');
 
 class OrderBook {
-  constructor(pairs) {
+  constructor(pairs, emiter) {
     this.pairs = pairs;
     this.bid = {};
     this.ask = {};
     this.lock = new Lock();
-    this.instance = uuidv4();
+    this.eventEmitter = emiter
+    this.isSynced = true
   }
 
   addOrder(pair, side, price, amount) {
     this.lock.acquire();
 
     try {
-      
       if (this.sumExistingOrders(pair, side, price, amount)) return;
 
       const orders = this[side][pair] || [];
-      orders.push({ price, amount, instance: this.instance });
+      orders.push({ price, amount });
       this[side][pair] = orders;
+      this.isSynced = false
+      if (this.eventEmitter) this.eventEmitter.emit('updateBook')
     } finally {
       this.lock.release();
     }
@@ -27,16 +28,19 @@ class OrderBook {
 
   removeOrder(pair, side, price, amount) {
     this.lock.acquire();
-
+    
     try {
       const orders = this[side][pair];
-      const index = orders.findIndex(order => order.price === price && order.amount === amount && order.instance === this.instance);
+      const index = orders.findIndex(order => order.price === price && order.amount === amount);
       if (index !== -1) {
         orders.splice(index, 1);
         if (orders.length === 0) {
           delete this[side][pair];
         }
       }
+      
+      this.isSynced = false
+      if (this.eventEmitter) this.eventEmitter.emit('updateBook')
     } finally {
       this.lock.release();
     }
@@ -63,23 +67,25 @@ class OrderBook {
   }
 
   update(book) {
-    if (!book) return;
+    if (!book || this.isSynced) return;
 
-    const { pair, bid, ask } = book;
+    for (const pair of Object.keys(book)){
+      const { bid, ask } = book[pair];
 
-    if (bid && bid.length > 0) {
-      for (const newBid of bid) {
-        this.addOrder(pair, 'bid', newBid.price, newBid.amount);
+      if (bid && bid.length > 0) {
+        for (const newBid of bid) {
+          this.addOrder(pair, 'bid', newBid.price, newBid.amount);
+        }
       }
-    }
 
-    if (ask && ask.length > 0) {
-      for (const newAsk of ask) {
-        this.addOrder(pair, 'ask', newAsk.price, newAsk.amount);
+      if (ask && ask.length > 0) {
+        for (const newAsk of ask) {
+          this.addOrder(pair, 'ask', newAsk.price, newAsk.amount);
+        }
       }
+      this.matchOrders(pair);
+      this.isSynced = true
     }
-
-    this.matchOrders(pair);
   }
 
   matchOrders(pair) {

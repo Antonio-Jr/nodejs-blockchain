@@ -3,17 +3,38 @@
 const { PeerRPCClient } = require('grenache-nodejs-http');
 const Link = require('grenache-nodejs-link');
 const OrderBook = require('./orderbook');
+const EventEmitter = require('events');
 
 const pairs = ['BTC-USD']
 
 class Client {
   constructor(grapeUrl) {
+    this.eventEmitter = new EventEmitter();
     this.link = new Link({ grape: grapeUrl });
     this.link.start();
-    this.orderBook = new OrderBook(pairs);
-    this.peer = new PeerRPCClient(this.link, {});
+    
+    this.peer = new PeerRPCClient(this.link, { timeout: 100000 });
     this.peer.init();
-    this.syncBookWithRetry(); // Inicialize a sincronização com tentativas
+    
+    this.orderBook = new OrderBook(pairs, this.eventEmitter);
+    this.eventEmitter.on('updateBook', async () => {
+      await this.syncBookWithRetry();
+    })
+  }
+
+  syncedBook(book){
+    const { ask, bid } = JSON.parse(book);
+    if(Object.keys(ask).length === 0 && Object.keys(bid).length === 0) return;
+
+    this.orderBook.bid = bid;
+    this.orderBook.ask = ask;
+
+    for(const pair of this.orderBook.pairs){
+      
+      console.log([pair], this.orderBook.getDepth(pair))
+    }
+
+    console.log('Book updated successfully!')
   }
 
   async syncBook() {
@@ -23,32 +44,30 @@ class Client {
       this.peer.request('sync_book', book, (err, result) => {
         if (err) {
           console.error('Erro durante a sincronização:', err);
-          this.retrySyncBook(); // Inicie uma nova tentativa de sincronização
+          this.retrySyncBook();
           return;
         }
 
         if (result) {
-          const { ask, bid } = JSON.parse(result);
-          this.orderBook.bid = bid;
-          this.orderBook.ask = ask;
+          this.syncedBook(result)
         }
       });
     } catch (err) {
       console.error('Erro durante a sincronização:', err);
-      this.retrySyncBook(); // Inicie uma nova tentativa de sincronização
+      this.retrySyncBook();
     }
   }
 
   async retrySyncBook() {
-    const retryInterval = 5000; // Tempo de espera entre tentativas (5 segundos)
+    const retryInterval = 5000;
 
     setTimeout(() => {
-      this.syncBook(); // Tente a sincronização novamente após o intervalo
+      this.syncBook();
     }, retryInterval);
   }
 
   async syncBookWithRetry() {
-    this.syncBook(); // Inicialize a sincronização
+    this.syncBook();
   }
 
   async stop() {
@@ -58,29 +77,14 @@ class Client {
 }
 
 
+const serverPort = process.argv[2] || '30001'
+console.log(`Client started on port ${serverPort}`)
 
-const client = new Client('http://127.0.0.1:30001');
-client.syncBook();
-console.log(client.orderBook.getDepth("BTC-USD"));
-
-console.log(client.orderBook)
+const client = new Client(`http://127.0.0.1:${serverPort}`);
 
 client.orderBook.addOrder("BTC-USD", "bid", 10, 10);
-
 client.orderBook.addOrder("BTC-USD", "bid", 10, 50);
-client.syncBook();
-
 client.orderBook.addOrder("BTC-USD", "ask", 10, 10);
-client.syncBook();
-
-client.syncBook();
-console.log(client.orderBook.getBestPrice("BTC-USD", "bid"));
-
-client.syncBook();
-console.log(client.orderBook.getBestPrice("BTC-USD", "ask"));
-
-client.syncBook();
 client.orderBook.removeOrder("BTC-USD", "bid", 10, 10);
 
-client.syncBook();
-console.log(client.orderBook.getDepth("BTC-USD"));
+console.log(client.orderBook.getDepth("BTC-USD"))
